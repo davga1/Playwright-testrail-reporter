@@ -1,0 +1,21 @@
+{
+  "name": "proj_zealous",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "playwright": "playwright test",
+    "pwSubmit": ""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.40.1",
+    "@types/node": "^20.10.1"
+  },
+  "dependencies": {
+    "json-stringify-safe": "^5.0.1",
+    "playwright-testrail-reporter": "^1.2.0"
+  }
+}
