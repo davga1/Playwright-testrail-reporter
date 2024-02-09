@@ -1,8 +1,8 @@
 node_modules/
-/test-results/
-/playwright-report/
+test-results/
+playwright-report/
 /blob-report/
 /playwright/.cache/
-/tests/
-/tests-examples/
-/playwright.config
+tests/
+tests-examples/
+playwright.config
