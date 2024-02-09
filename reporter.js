@@ -1,103 +1,66 @@
 let AUTHORIZATION_HEADER = ''
 let TESTRAIL_HOST = ''
 
-var once_per_day = true
-var todayDate =  new Date().toDateString()
-var case_titles_from_testrail = []
-var test_case_titles = []
-var case_ids = []
-const runName = `Test run:${todayDate}`
-const projectId = 1
-var runId
-var results = []
-var case_index = 0
-//function which gets all the cases from testrail project
-async function getCases(project_id) {
+let projectId = 1
+let runName = 'New Test Run:' + new Date().toDateString()
+let results = []
+let case_index = 0
+let testrail_cases = []
+let case_ids = []
+let once_per_day = true
+
+
+async function get_cases_from_testrail(project_id) {
   const response = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/get_cases/${project_id}`, {
     method: 'GET',
     headers: {
-      'Authorization': AUTHORIZATION_HEADER,
+      "Content-Type": "application/json",
+      "Authorization": AUTHORIZATION_HEADER
     }
   })
-  var result = JSON.parse(await response.text())
-  // console.log('Got all cases from project:', result == [] ? 'No test case on project' : result['cases'])
-  return result['cases']
+  const result = JSON.parse(await response.text())['cases']
+  return result
 }
-//function which adds new case in testrail project
-async function addCase(section_id, runName) {
-  const response = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/add_case/${section_id}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': AUTHORIZATION_HEADER,
-      'Content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      'title': runName,
-    })
-  })
-  var id = JSON.parse(await response.text()).id
-  case_ids.push(id)
-  console.log('Succesfully added new test case to your project with id ',id)
-}
-//function which adds new test run
-async function addRun(run_name, project_id) {
+
+async function add_run(run_name, project_id, case_ids) {
   const response = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/add_run/${project_id}`, {
     method: 'POST',
     headers: {
-      'Authorization': AUTHORIZATION_HEADER,
-      'Content-type': 'application/json'
+      "Content-Type": "application/json",
+      "Authorization": AUTHORIZATION_HEADER
     },
     body: JSON.stringify({
-      'name': run_name,
-      'include_all': false,
+      "include_all": false,
+      "name": run_name,
+      "case_ids": case_ids
     })
   })
-  runId = JSON.parse(await response.text()).id
-  console.log('Succesfully added new run:',runId)
-}
-//function which updates the test run
-async function updateRun(run_id, case_ids) {
-  await fetch(`${TESTRAIL_HOST}//index.php?/api/v2/update_run/${run_id}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': AUTHORIZATION_HEADER,
-      'Content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      'include_all': false,
-      'case_ids': case_ids
-    })
-  })
-  console.log('Succesfully updated the run:', run_id)
+  return JSON.parse(await response.text())
 }
 
-//function which adds all the results for test cases
-async function addResultsForCases(run_id, results) {
-  const a = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/add_results_for_cases/${run_id}`, {
+async function add_results_for_cases(run_id, _results) {
+  await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/add_results_for_cases/${run_id}`, {
     method: 'POST',
     headers: {
-      'Authorization': AUTHORIZATION_HEADER,
-      'Content-type': 'application/json'
+      "Content-Type": "application/json",
+      "Authorization": AUTHORIZATION_HEADER
     },
     body: JSON.stringify({
-      'results': results
+      "results": _results
     })
   })
-  console.log(JSON.parse(await a.text()))
-}
-//gets last run from your test runs
-async function getLastRun(project_id){
-  const response = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/get_runs/${project_id}`,{
-    method:'GET',
-    headers:{
-      'Authorization': AUTHORIZATION_HEADER,
-      'Content-type': 'application/json'
-    }
-  })
-  var runs = JSON.parse(await response.text())['runs'] 
-  return runs.length == 0 ? '' : runs[0]
 }
 
+async function get_runs(project_id) {
+  const response = await fetch(`${TESTRAIL_HOST}/index.php?/api/v2/get_runs/${project_id}`, {
+    method: 'GET',
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": AUTHORIZATION_HEADER
+    },
+  })
+  return JSON.parse(await response.text())
+}
 
 class BaseReporter {
   constructor(options = {}) {
@@ -118,56 +81,43 @@ class BaseReporter {
     this.config = config;
   }
   async onBegin(suite) {
-    if (once_per_day == true){
-      var last_title = (await getLastRun(projectId)).name
-     if(last_title != undefined){
-      var _date = last_title.split(':')[1]
-      if(todayDate == _date){
-        runId = (await getLastRun(projectId)).id
-      }else {
-        await addRun(runName,projectId)
-      }
-    }else await addRun(runName,projectId)
-     } else await addRun(runName,projectId)
-    // reporter takes all the cases from testrail project
-    const test_cases_in_testrail = await getCases(projectId)
-    this.suite = suite;
-    this.totalTestCount = suite.allTests().length;
-    const allTests = suite.allTests()
-    //gets project's test case titles and then compares with local test titles. If test;s title is the same as in testrail project, it takes testrail project's case id instead of creating new test case, then adds it to the case_ids list, which contains current case ids
-    allTests.forEach(_test => {
-      test_case_titles.push(_test.title)
-      test_cases_in_testrail.forEach(el => {
-        if (_test.title == el.title) {
-          case_titles_from_testrail.push(el.title)
-          case_ids.push(el.id)
-          return false
+    const localTests = suite.allTests()
+    await get_cases_from_testrail(projectId).then((res) => {
+      res.forEach((el) => {
+        testrail_cases.push(el)
+      })
+    })
+    localTests.forEach(async (_test) => {
+      testrail_cases.forEach((t_test) => {
+        if (_test.title == t_test.title) {
+          case_ids.push(t_test.id)
         }
       })
     })
-    test_case_titles = test_case_titles.filter(item => !case_titles_from_testrail.includes(item))
-    test_case_titles.forEach(async _title => {
-      await addCase(1, _title)
-    })
-    //checks todays date and last run's date, they if once_per_day is true takes last run's ID and makes all the functions there. If once_per_day is false or date aren't the same it creates new run 
-//     if(once_per_day == true){
-//       var _title = await getLastRun(projectId).name
-//      if(_title != undefined){
-//       var _date = _title.split(':')[1]
-//      }
-//     }
-//     console.log('DATE', _date)
-// if(_title == undefined){
-//   await addRun(runName,projectId)
-//   console.log(_date,'DATE')
-//   console.log(_title,'TITLE')
-// } else {
-//   if(once_per_day == true){
-//     todayDate == _date ? runId = await getLastRun(projectId).id : await addRun(runName, projectId) 
-//   }await addRun(runName,projectId)
-// }
-  }
+    try {
+      if (once_per_day == true) {
+        await get_runs(projectId).then((res) => {
+          const last_run = res['runs'][0]
+          const last_run_name = last_run.name
+          if (last_run_name.split(':')[1] == new Date().toDateString()) {
+            global.runId = last_run.id
+            global.url = last_run.url
+          }
+        })
+      } else {
+        const res = await add_run(runName, projectId, case_ids);
+        if (res && typeof res.id === 'number') {
+          global.runId = res.id;
+          global.url = res.url
+        } else {
+          console.error("Invalid response from add_run:", res);
+        }
+      }
 
+    } catch (error) {
+      console.error("Error while calling add_run:", error);
+    }
+  }
 
   onStdOut(chunk, test, result) {
     this._appendOutput({
@@ -194,35 +144,28 @@ class BaseReporter {
         "status_id": 1,
         "comment": "This test passed",
       })
-    } else if (result.status == 'failed') {
+    }
+    else if (result.status == 'failed') {
       results.push({
         "case_id": case_ids[case_index],
         "status_id": 5,
-        "comment": "This test failed",
+        "comment": result.error?.message.replace(/(\u001b\[\d+m)/g, '').replace(/(\n)/, '\n').replace(/\/\/ Object\.is equality/g, '')
       })
     }
-
-    if (result.status !== 'skipped' && result.status !== test.expectedStatus) ++this._failureCount;
-    // Ignore any tests that are run in parallel.
-    for (let suite = test.parent; suite; suite = suite.parent) {
-      if (suite._parallelMode === 'parallel') return;
-    }
     case_index++
-
   }
   onError(error) {
     this._fatalErrors.push(error);
   }
   async onEnd(result) {
-    this.result = result;
-    await updateRun(runId, case_ids)
-    console.log('CASE IDS', case_ids)
-    results[0].case_id = case_ids[0]
-    await addResultsForCases(runId, results)
+    await add_results_for_cases(global.runId, results)
+    console.log('See results! :', global.url)
+
   }
   onStepBegin(test, result, step) { }
   onStepEnd(test, result, step) { }
-  async onExit() { }
+  async onExit() {
+  }
   printsToStdio() {
     return true;
   }
@@ -333,4 +276,4 @@ class BaseReporter {
   _printSummary(summary) { }
   willRetry(test) { }
 }
-module.exports = BaseReporter
+export default BaseReporter
